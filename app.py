@@ -76,19 +76,29 @@ MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "fashion_cu
 def get_model():
     """Define and return the model architecture"""
     model = Sequential([
-        Input(shape=(28, 28, 1), name='input_layer'),
-        Conv2D(32, (3, 3), activation='relu', padding='same'),
+        InputLayer(input_shape=(28, 28, 1)),
+        Conv2D(32, 3, padding='same', activation='relu'),
         BatchNormalization(),
-        MaxPooling2D((2, 2)),
+        Conv2D(32, 3, padding='same', activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(),
         Dropout(0.25),
         
-        Conv2D(64, (3, 3), activation='relu', padding='same'),
+        Conv2D(64, 3, padding='same', activation='relu'),
         BatchNormalization(),
-        MaxPooling2D((2, 2)),
+        Conv2D(64, 3, padding='same', activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(),
+        Dropout(0.25),
+        
+        Conv2D(128, 3, padding='same', activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(),
         Dropout(0.25),
         
         Flatten(),
-        Dense(128, activation='relu'),
+        Dense(256, activation='relu'),
+        BatchNormalization(),
         Dropout(0.5),
         Dense(10, activation='softmax')
     ])
@@ -97,43 +107,60 @@ def get_model():
 
 def load_custom_model():
     """Load the custom trained model by rebuilding its architecture"""
+    print(f"Attempting to load model from {MODEL_PATH}")
+    
+    # First check if model file exists
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"Model file not found at: {MODEL_PATH}")
+        return None
+    
+    # First try to load the model directly
     try:
-        # Check if model file exists
-        if not os.path.exists(MODEL_PATH):
-            st.error(f"Model file not found at: {MODEL_PATH}")
-            return None
-            
-        # Rebuild the model architecture
-        model = get_model()
-        
-        # Load the weights
-        model.load_weights(MODEL_PATH)
-        
-        # Compile the model
-        model.compile(optimizer='adam',
-                    loss='sparse_categorical_crossentropy',
-                    metrics=['accuracy'])
-        
+        print("Attempt 1: Loading with default settings...")
+        model = load_model(MODEL_PATH)
+        print("✓ Model loaded successfully with default settings")
         st.success("Successfully loaded pre-trained model!")
         return model
-        
     except Exception as e:
-        st.error(f"Error loading model from {MODEL_PATH}: {str(e)}")
-        st.warning("Trying to load with custom objects...")
-        try:
-            # Try loading with custom objects if available
-            model = tf.keras.models.load_model(
-                MODEL_PATH,
-                custom_objects={'InputLayer': tf.keras.layers.InputLayer},
-                compile=False
-            )
-            model.compile(optimizer='adam',
-                        loss='sparse_categorical_crossentropy',
-                        metrics=['accuracy'])
-            return model
-        except Exception as e2:
-            st.error(f"Failed to load model with custom objects: {str(e2)}")
-            return None
+        print(f"✗ Error with default loading: {e}")
+    
+    # If direct loading fails, try with custom objects and compile
+    try:
+        print("\nAttempt 2: Loading with custom objects and compiling...")
+        model = load_model(
+            MODEL_PATH, 
+            custom_objects={'InputLayer': tf.keras.layers.InputLayer},
+            compile=False
+        )
+        model.compile(
+            optimizer='adam',
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        print("✓ Model loaded successfully with custom compilation")
+        st.success("Successfully loaded pre-trained model with custom objects!")
+        return model
+    except Exception as e:
+        print(f"✗ Error with custom objects: {e}")
+    
+    # If that fails, rebuild the model and load weights
+    try:
+        print("\nAttempt 3: Rebuilding model and loading weights...")
+        model = get_model()
+        model.load_weights(MODEL_PATH)
+        model.compile(
+            optimizer='adam',
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        print("✓ Model loaded successfully by rebuilding architecture")
+        st.success("Successfully rebuilt model and loaded weights!")
+        return model
+    except Exception as e:
+        error_msg = f"Failed to load model: {str(e)}"
+        print(f"✗ {error_msg}")
+        st.error(error_msg)
+        return None
 
 def preprocess_image(img, target_size=(28, 28)):
     """Preprocess the image for model prediction"""
