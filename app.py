@@ -4,7 +4,7 @@ import os
 from PIL import Image, ImageDraw
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization, InputLayer
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization, InputLayer, Input
 from tensorflow.keras.preprocessing import image
 import matplotlib.pyplot as plt
 import io
@@ -62,8 +62,7 @@ st.set_page_config(
 )
 
 # Set matplotlib style
-plt.style.use('seaborn')
-
+plt.style.use('ggplot')  # Using built-in 'ggplot' style instead of seaborn
 
 # Class labels for Fashion MNIST
 CLASS_LABELS = [
@@ -74,16 +73,41 @@ CLASS_LABELS = [
 # Model path - using absolute path to ensure it's found
 MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "fashion_custom_cnn.h5"))
 
+def get_model():
+    """Define and return the model architecture"""
+    model = Sequential([
+        Input(shape=(28, 28, 1), name='input_layer'),
+        Conv2D(32, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.25),
+        
+        Conv2D(64, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.25),
+        
+        Flatten(),
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(10, activation='softmax')
+    ])
+    
+    return model
+
 def load_custom_model():
-    """Load the custom trained model from the specified path"""
+    """Load the custom trained model by rebuilding its architecture"""
     try:
         # Check if model file exists
         if not os.path.exists(MODEL_PATH):
             st.error(f"Model file not found at: {MODEL_PATH}")
             return None
             
-        # Load the model
-        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+        # Rebuild the model architecture
+        model = get_model()
+        
+        # Load the weights
+        model.load_weights(MODEL_PATH)
         
         # Compile the model
         model.compile(optimizer='adam',
@@ -95,7 +119,21 @@ def load_custom_model():
         
     except Exception as e:
         st.error(f"Error loading model from {MODEL_PATH}: {str(e)}")
-        return None
+        st.warning("Trying to load with custom objects...")
+        try:
+            # Try loading with custom objects if available
+            model = tf.keras.models.load_model(
+                MODEL_PATH,
+                custom_objects={'InputLayer': tf.keras.layers.InputLayer},
+                compile=False
+            )
+            model.compile(optimizer='adam',
+                        loss='sparse_categorical_crossentropy',
+                        metrics=['accuracy'])
+            return model
+        except Exception as e2:
+            st.error(f"Failed to load model with custom objects: {str(e2)}")
+            return None
 
 def preprocess_image(img, target_size=(28, 28)):
     """Preprocess the image for model prediction"""
