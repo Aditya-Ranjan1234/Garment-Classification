@@ -560,22 +560,27 @@ def show_predictions(model, x_test, y_test, class_names, num_examples=5):
                 else:
                     st.warning(f"Low confidence prediction: {CLASS_LABELS[predicted_class]} ({confidence:.2f})")
                     st.info("Try uploading a clearer image or adjusting the confidence threshold.")
-    - Trouser
-    - Pullover
-    - Dress
-    - Coat
-    - Sandal
-    - Shirt
-    - Sneaker
-    - Bag
-    - Ankle boot
-    """)
-    
-    st.sidebar.markdown("---")
-    st.sidebar.info(
-        "For best results, upload clear images of single clothing items on a plain background. "
-        "The model works best with images similar to the Fashion MNIST dataset."
-    )
+        
+        st.sidebar.markdown("## Class Labels")
+        st.sidebar.markdown("The model can identify the following items:")
+        st.sidebar.markdown("""
+        - T-shirt/top
+        - Trouser
+        - Pullover
+        - Dress
+        - Coat
+        - Sandal
+        - Shirt
+        - Sneaker
+        - Bag
+        - Ankle boot
+        """)
+        
+        st.sidebar.markdown("---")
+        st.sidebar.info(
+            "For best results, upload clear images of single clothing items on a plain background. "
+            "The model works best with images similar to the Fashion MNIST dataset."
+        )
 
 if __name__ == "__main__":
     main()

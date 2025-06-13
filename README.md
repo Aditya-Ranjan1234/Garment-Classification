@@ -1,29 +1,42 @@
-# GarmentCV - Fashion Analysis App
+# Fashion Item Classifier
 
-A Streamlit-based web application for analyzing garments and providing style recommendations using computer vision and deep learning.
+A Streamlit-based web application for classifying fashion items using deep learning. The app allows you to either classify uploaded images or train your own model on the Fashion MNIST dataset.
 
 ## Features
 
-- Upload and analyze garment images
-- Automatic garment type classification
-- Confidence scoring for predictions
-- Style and pairing recommendations
-- Interactive visualization of classification results
-- User-friendly interface with adjustable settings
+### 🔍 Image Classification
+- Upload and classify fashion item images
+- View prediction confidence scores
+- See class probability distributions
+- Supports JPG, JPEG, and PNG formats
+
+### 🎓 Interactive Model Training
+- Train a CNN model directly in the browser
+- Real-time training visualization
+- Adjustable training parameters (epochs, batch size, learning rate)
+- Live loss and accuracy plots
+- Early stopping capability
+- Model download after training
+
+### 📊 Data Visualization
+- View sample images from the dataset
+- Training/validation split visualization
+- Confusion matrix
+- Example predictions on test set
 
 ## Installation
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
-   cd garmentcv-app
+   git clone https://github.com/yourusername/garment-classification.git
+   cd garment-classification
    ```
 
 2. Create and activate a virtual environment (recommended):
    ```bash
    python -m venv venv
-   .\\venv\\Scripts\\activate  # On Windows
-   source venv/bin/activate    # On macOS/Linux
+   .\venv\Scripts\activate  # On Windows
+   source venv/bin/activate  # On macOS/Linux
    ```
 
 3. Install the required packages:
@@ -38,16 +51,32 @@ A Streamlit-based web application for analyzing garments and providing style rec
    streamlit run app.py
    ```
 
-2. Open your web browser and navigate to the provided local URL (usually http://localhost:8501)
+2. The app will open in your default web browser at `http://localhost:8501`
 
-3. Upload an image of a garment using the file uploader
+### Image Classification
+1. Go to the "🔍 Image Classification" tab
+2. Click "Browse files" to upload an image
+3. View the prediction results and confidence scores
 
-4. Adjust the confidence threshold in the sidebar if needed
+### Model Training
+1. Go to the "🎓 Train Your Own Model" tab
+2. Adjust the training parameters as needed
+3. Click "Start Training" to begin
+4. Monitor the training progress with live plots
+5. Use "Stop Training" to halt the training process
+6. After training, view test metrics and example predictions
+7. Download the trained model if desired
 
-5. View the analysis results, including:
-   - Predicted garment type
-   - Confidence scores for all categories
-   - Style recommendations
+## Requirements
+- Python 3.8+
+- TensorFlow 2.12.0
+- Streamlit 1.31.0
+- NumPy 1.24.3
+- Matplotlib 3.7.1
+- scikit-learn 1.2.2
+- Pillow 10.0.0
+- h5py 3.8.0
+- seaborn 0.12.2
 
 ## Project Structure
 
