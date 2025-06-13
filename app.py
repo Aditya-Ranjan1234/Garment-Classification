@@ -71,8 +71,8 @@ CLASS_LABELS = [
     "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"
 ]
 
-# Model path
-MODEL_PATH = os.path.join("D:", "My Projects", "somesh", "garmentcv-app", "fashion_custom_cnn.h5")
+# Model path - using absolute path to ensure it's found
+MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "fashion_custom_cnn.h5"))
 
 def load_custom_model():
     """Load the custom trained model from the specified path"""
@@ -465,9 +465,12 @@ def main():
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader")
     
     if uploaded_file is not None:
-        # Display the uploaded image
+        # Display the uploaded image with fixed size
         image = Image.open(uploaded_file)
-        st.image(image, caption='Uploaded Image', use_column_width=True, width=200)
+        # Resize the image to a maximum width of 300px while maintaining aspect ratio
+        max_size = (300, 300)
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+        st.image(image, caption='Uploaded Image', use_column_width=False, width=300)
         
         # Add classify button
         if st.button("🔍 Classify Image", key="classify_button"):
