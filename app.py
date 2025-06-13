@@ -480,13 +480,73 @@ history = model.fit(x_train, y_train,
         with training_output.container():
             st.info("🚀 Starting training... This may take a few minutes.")
             
-            # Initialize progress bar and status
+            # Create placeholders for training UI
             progress_bar = st.progress(0)
             status_text = st.empty()
-            plot_placeholder = st.empty()
+            log_placeholder = st.empty()
             
-            # Initialize callback with class names
-            training_callback = TrainingPlot(plot_placeholder, CLASS_LABELS)
+            # Initialize metrics history
+            metrics_history = {
+                'loss': [], 'accuracy': [],
+                'val_loss': [], 'val_accuracy': []
+            }
+            
+            # Custom callback for logging and progress
+            class TrainingCallback(tf.keras.callbacks.Callback):
+                def on_epoch_end(self, epoch, logs=None):
+                    if logs is None:
+                        logs = {}
+                    
+                    # Update metrics history
+                    for metric in ['loss', 'accuracy', 'val_loss', 'val_accuracy']:
+                        metrics_history[metric].append(logs.get(metric, 0))
+                    
+                    # Calculate progress
+                    progress = (epoch + 1) / epochs
+                    progress_bar.progress(min(int(progress * 100), 100))
+                    
+                    # Prepare status update
+                    status_update = f"""
+## Epoch {epoch + 1}/{epochs} ({int(progress * 100)}% complete)
+
+| Metric | Training | Validation |
+|--------|----------|-------------|
+| **Loss** | {logs.get('loss', 0):.4f} | {logs.get('val_loss', 0):.4f} |
+| **Accuracy** | {logs.get('accuracy', 0) * 100:.2f}% | {logs.get('val_accuracy', 0) * 100:.2f}% |
+
+*Progress: {epoch + 1}/{epochs} epochs*
+                    """
+                    
+                    # Update the display
+                    with log_placeholder.container():
+                        st.markdown(status_update, unsafe_allow_html=True)
+                        
+                        # Add plots if we have enough data
+                        if len(metrics_history['loss']) > 1:
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+                            
+                            # Plot loss
+                            ax1.plot(metrics_history['loss'], label='Training')
+                            ax1.plot(metrics_history['val_loss'], label='Validation')
+                            ax1.set_title('Model Loss')
+                            ax1.set_ylabel('Loss')
+                            ax1.set_xlabel('Epoch')
+                            ax1.legend()
+                            
+                            # Plot accuracy
+                            ax2.plot(metrics_history['accuracy'], label='Training')
+                            ax2.plot(metrics_history['val_accuracy'], label='Validation')
+                            ax2.set_title('Model Accuracy')
+                            ax2.set_ylabel('Accuracy')
+                            ax2.set_xlabel('Epoch')
+                            ax2.legend()
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close()
+            
+            # Initialize the callback
+            training_callback = TrainingCallback()
             
             # Load data
             with st.spinner("Loading Fashion MNIST dataset..."):
@@ -509,120 +569,51 @@ history = model.fit(x_train, y_train,
                 buffer = StringIO()
                 model.summary(print_fn=lambda x: buffer.write(x + '\n'))
                 st.text(buffer.getvalue())
-            
-            # Train model with our custom callback and verbose output
-            try:
-                # Create placeholders for training logs and progress
-                st.subheader("Training Progress")
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                log_placeholder = st.empty()
                 
-                # Initialize metrics history
-                metrics_history = {
-                    'loss': [], 'accuracy': [],
-                    'val_loss': [], 'val_accuracy': []
-                }
-                
-                # Custom callback for logging
-                class LoggingCallback(tf.keras.callbacks.Callback):
-                    def on_epoch_end(self, epoch, logs=None):
-                        # Update metrics history
-                        for metric in ['loss', 'accuracy', 'val_loss', 'val_accuracy']:
-                            metrics_history[metric].append(logs.get(metric))
+                try:
+                    with st.spinner("Training in progress..."):
+                        history = model.fit(
+                            x_train, y_train,
+                            batch_size=batch_size,
+                            epochs=epochs,
+                            validation_data=(x_val, y_val),
+                            callbacks=[training_callback],
+                            verbose=0
+                        )
+                    
+                    # Show final metrics on test set if training completed
+                    if not stop_training:
+                        st.success("✅ Training complete!")
+                        with st.spinner("Evaluating on test set..."):
+                            test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
                         
-                        # Calculate progress
-                        progress = (epoch + 1) / epochs
-                        progress_bar.progress(min(int(progress * 100), 100))
+                        # Display metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Test Loss", f"{test_loss:.4f}")
+                        with col2:
+                            st.metric("Test Accuracy", f"{test_acc*100:.2f}%")
                         
-                        # Prepare the status update
-                        status_update = """
-## Epoch {}/{} ({}% complete)
-
-| Metric | Training | Validation |
-|--------|----------|-------------|
-| **Loss** | {:.4f} | {:.4f} |
-| **Accuracy** | {:.2f}% | {:.2f}% |
-
-*Progress: {}/{} epochs*
-                        """.format(
-    epoch + 1, epochs, int(progress * 100),
-    logs['loss'], logs['val_loss'],
-    logs['accuracy'] * 100, logs['val_accuracy'] * 100,
-    epoch + 1, epochs
-)
+                        # Show some example predictions
+                        st.subheader("Example Predictions on Test Set")
+                        with st.spinner("Generating predictions..."):
+                            show_predictions(model, x_test, y_test, CLASS_LABELS)
                         
-                        # Update the display
-                        with log_placeholder.container():
-                            st.markdown(status_update, unsafe_allow_html=True)
-                            
-                            # Add a small plot of the training progress
-                            if len(metrics_history['loss']) > 1:
-                                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-                                
-                                # Plot loss
-                                ax1.plot(metrics_history['loss'], label='Training')
-                                ax1.plot(metrics_history['val_loss'], label='Validation')
-                                ax1.set_title('Model Loss')
-                                ax1.set_ylabel('Loss')
-                                ax1.set_xlabel('Epoch')
-                                ax1.legend()
-                                
-                                # Plot accuracy
-                                ax2.plot(metrics_history['accuracy'], label='Training')
-                                ax2.plot(metrics_history['val_accuracy'], label='Validation')
-                                ax2.set_title('Model Accuracy')
-                                ax2.set_ylabel('Accuracy')
-                                ax2.set_xlabel('Epoch')
-                                ax2.legend()
-                                
-                                plt.tight_layout()
-                                st.pyplot(fig)
-                                plt.close()
-                
-                with st.spinner("Training in progress..."):
-                    history = model.fit(
-                        x_train, y_train,
-                        batch_size=batch_size,
-                        epochs=epochs,
-                        validation_data=(x_val, y_val),
-                        callbacks=[training_callback, LoggingCallback()],
-                        verbose=0
-                    )
-                
-                # Show final metrics on test set if training completed
-                if not stop_training:
-                    st.success("✅ Training complete!")
-                    with st.spinner("Evaluating on test set..."):
-                        test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+                        # Download button for the trained model
+                        st.download_button(
+                            label="💾 Download Model",
+                            data=model_to_bytes(model, 'fashion_mnist_model.h5'),
+                            file_name="fashion_mnist_model.h5",
+                            mime="application/octet-stream"
+                        )
+                    else:
+                        st.warning("⚠️ Training was stopped early.")
                     
-                    # Display metrics
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Test Loss", f"{test_loss:.4f}")
-                    with col2:
-                        st.metric("Test Accuracy", f"{test_acc*100:.2f}%")
-                    
-                    # Show some example predictions
-                    st.subheader("Example Predictions on Test Set")
-                    with st.spinner("Generating predictions..."):
-                        show_predictions(model, x_test, y_test, CLASS_LABELS)
-                    
-                    # Download button for the trained model
-                    st.download_button(
-                        label="💾 Download Model",
-                        data=model_to_bytes(model, 'fashion_mnist_model.h5'),
-                        file_name="fashion_mnist_model.h5",
-                        mime="application/octet-stream"
-                    )
-                else:
-                    st.warning("⚠️ Training was stopped early.")
-                    
-            except Exception as e:
-                st.error(f"An error occurred during training: {str(e)}")
-            finally:
-                # Reset the stop flag
-                stop_training = False
+                except Exception as e:
+                    st.error(f"An error occurred during training: {str(e)}")
+                finally:
+                    # Reset the stop flag
+                    stop_training = False
 
     # Add a divider before the upload section
     st.markdown("---")
