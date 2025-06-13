@@ -114,22 +114,25 @@ def load_custom_model():
         st.error(f"Model file not found at: {MODEL_PATH}")
         return None
     
-    # First try to load the model directly
+    # First try to load the model directly with safe_mode=False (for newer TensorFlow versions)
     try:
-        print("Attempt 1: Loading with default settings...")
-        model = load_model(MODEL_PATH)
-        print("✓ Model loaded successfully with default settings")
+        print("Attempt 1: Loading with safe_mode=False...")
+        model = load_model(MODEL_PATH, safe_mode=False)
+        print("✓ Model loaded successfully with safe_mode=False")
         st.success("Successfully loaded pre-trained model!")
         return model
     except Exception as e:
-        print(f"✗ Error with default loading: {e}")
+        print(f"✗ Error with safe_mode=False: {e}")
     
-    # If direct loading fails, try with custom objects and compile
+    # Try loading with custom InputLayer configuration
     try:
-        print("\nAttempt 2: Loading with custom objects and compiling...")
+        print("\nAttempt 2: Loading with custom InputLayer configuration...")
+        custom_objects = {
+            'InputLayer': lambda **cfg: tf.keras.layers.Input(shape=cfg.get('batch_shape', (None, 28, 28, 1))[1:], **{k: v for k, v in cfg.items() if k != 'batch_shape'})
+        }
         model = load_model(
-            MODEL_PATH, 
-            custom_objects={'InputLayer': tf.keras.layers.InputLayer},
+            MODEL_PATH,
+            custom_objects=custom_objects,
             compile=False
         )
         model.compile(
@@ -137,11 +140,11 @@ def load_custom_model():
             loss='sparse_categorical_crossentropy',
             metrics=['accuracy']
         )
-        print("✓ Model loaded successfully with custom compilation")
-        st.success("Successfully loaded pre-trained model with custom objects!")
+        print("✓ Model loaded successfully with custom InputLayer handler")
+        st.success("Successfully loaded pre-trained model with custom configuration!")
         return model
     except Exception as e:
-        print(f"✗ Error with custom objects: {e}")
+        print(f"✗ Error with custom InputLayer: {e}")
     
     # If that fails, rebuild the model and load weights
     try:
@@ -387,6 +390,40 @@ def main():
     You can customize the training process and visualize the learning progress in real-time.
     """)
     
+    # Show training code snippet
+    with st.expander("📝 View Training Code", expanded=False):
+        st.code('''# Import required libraries
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+
+# Load and preprocess data
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+x_train = x_train.astype("float32") / 255.0
+x_test = x_test.astype("float32") / 255.0
+x_train = x_train[..., None]
+x_test = x_test[..., None]
+
+# Create model
+model = Sequential([
+    Conv2D(32, 3, padding="same", activation="relu", input_shape=(28, 28, 1)),
+    BatchNormalization(),
+    # ... more layers ...
+    Dense(10, activation="softmax")
+])
+
+# Compile model
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+# Train model
+history = model.fit(x_train, y_train,
+                   batch_size=64,
+                   epochs=10,
+                   validation_split=0.2)
+        ''', language='python')
+    
     # Training parameters
     with st.expander("⚙️ Training Settings", expanded=True):
         col1, col2, col3 = st.columns(3)
@@ -473,15 +510,83 @@ def main():
                 model.summary(print_fn=lambda x: buffer.write(x + '\n'))
                 st.text(buffer.getvalue())
             
-            # Train model with our custom callback
+            # Train model with our custom callback and verbose output
             try:
+                # Create placeholders for training logs and progress
+                st.subheader("Training Progress")
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                log_placeholder = st.empty()
+                
+                # Initialize metrics history
+                metrics_history = {
+                    'loss': [], 'accuracy': [],
+                    'val_loss': [], 'val_accuracy': []
+                }
+                
+                # Custom callback for logging
+                class LoggingCallback(tf.keras.callbacks.Callback):
+                    def on_epoch_end(self, epoch, logs=None):
+                        # Update metrics history
+                        for metric in ['loss', 'accuracy', 'val_loss', 'val_accuracy']:
+                            metrics_history[metric].append(logs.get(metric))
+                        
+                        # Calculate progress
+                        progress = (epoch + 1) / epochs
+                        progress_bar.progress(min(int(progress * 100), 100))
+                        
+                        # Prepare the status update
+                        status_update = """
+## Epoch {}/{} ({}% complete)
+
+| Metric | Training | Validation |
+|--------|----------|-------------|
+| **Loss** | {:.4f} | {:.4f} |
+| **Accuracy** | {:.2f}% | {:.2f}% |
+
+*Progress: {}/{} epochs*
+                        """.format(
+    epoch + 1, epochs, int(progress * 100),
+    logs['loss'], logs['val_loss'],
+    logs['accuracy'] * 100, logs['val_accuracy'] * 100,
+    epoch + 1, epochs
+)
+                        
+                        # Update the display
+                        with log_placeholder.container():
+                            st.markdown(status_update, unsafe_allow_html=True)
+                            
+                            # Add a small plot of the training progress
+                            if len(metrics_history['loss']) > 1:
+                                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+                                
+                                # Plot loss
+                                ax1.plot(metrics_history['loss'], label='Training')
+                                ax1.plot(metrics_history['val_loss'], label='Validation')
+                                ax1.set_title('Model Loss')
+                                ax1.set_ylabel('Loss')
+                                ax1.set_xlabel('Epoch')
+                                ax1.legend()
+                                
+                                # Plot accuracy
+                                ax2.plot(metrics_history['accuracy'], label='Training')
+                                ax2.plot(metrics_history['val_accuracy'], label='Validation')
+                                ax2.set_title('Model Accuracy')
+                                ax2.set_ylabel('Accuracy')
+                                ax2.set_xlabel('Epoch')
+                                ax2.legend()
+                                
+                                plt.tight_layout()
+                                st.pyplot(fig)
+                                plt.close()
+                
                 with st.spinner("Training in progress..."):
                     history = model.fit(
                         x_train, y_train,
                         batch_size=batch_size,
                         epochs=epochs,
                         validation_data=(x_val, y_val),
-                        callbacks=[training_callback],
+                        callbacks=[training_callback, LoggingCallback()],
                         verbose=0
                     )
                 
@@ -518,17 +623,43 @@ def main():
             finally:
                 # Reset the stop flag
                 stop_training = False
-    
+
     # Add a divider before the upload section
     st.markdown("---")
-    
+
     # Image upload section
     st.header("🔍 Upload an Image for Classification")
     st.markdown("Upload an image of a fashion item to classify it using the pre-trained model.")
-    
+
+    # Add class information to the sidebar
+    with st.sidebar:
+        st.subheader("🔍 What can this model recognize?")
+        st.write("This model can classify images into the following 10 fashion categories:")
+
+        # Create two columns for better layout
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+            - 👕 T-shirt/top
+            - 👖 Trouser
+            - 🧥 Pullover
+            - 👗 Dress
+            - 🧥 Coat
+            """)
+
+        with col2:
+            st.markdown("""
+            - 👡 Sandal
+            - 👔 Shirt
+            - 👟 Sneaker
+            - 🎒 Bag
+            - 👢 Ankle boot
+            """)
+
     # File uploader
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader")
-    
+
     if uploaded_file is not None:
         # Display the uploaded image with fixed size
         image = Image.open(uploaded_file)
