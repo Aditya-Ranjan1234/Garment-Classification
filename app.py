@@ -434,33 +434,6 @@ def show_predictions(model, x_test, y_test, class_names, num_examples=5):
         
         The model uses data augmentation (random rotations and translations) to improve generalization.
         """)
-        img = Image.open(uploaded_file).convert('RGB')
-        img_np = np.array(img)
-        
-        # Display original image
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Uploaded Image")
-            st.image(img, use_column_width=True)
-        
-        # Process the image and make predictions
-        with st.spinner("Analyzing the garment..."):
-            # Load the pre-trained model
-            model = load_custom_model()
-            
-            if model is None:
-                st.error("Failed to load the model. Please try again later.")
-                return
-            
-            # Preprocess image
-            processed_img = preprocess_image(img)
-            
-            if processed_img is None:
-                st.error("Failed to preprocess the image.")
-                return
-            
-            # Make prediction
-            predicted_class, confidence, all_predictions = predict_garment(model, processed_img)
             
             # Display results
             with col2:
