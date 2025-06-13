@@ -7,12 +7,23 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization, InputLayer
 from tensorflow.keras.preprocessing import image
 import matplotlib.pyplot as plt
-import warnings
 import io
-import base64
 import time
+import warnings
+from io import StringIO, BytesIO
+import tempfile
+
+# Import training utilities
 from train_utils import TrainingPlot, get_model, load_data
 warnings.filterwarnings('ignore')
+
+def model_to_bytes(model, filename):
+    """Save model to bytes for download"""
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as tmp:
+        model.save(tmp.name, save_format='h5')
+        with open(tmp.name, 'rb') as f:
+            model_bytes = f.read()
+    return model_bytes
 
 # Class labels for Fashion MNIST
 CLASS_LABELS = [
@@ -44,6 +55,7 @@ st.set_page_config(
 
 # Set matplotlib style
 plt.style.use('seaborn')
+
 
 # Class labels for Fashion MNIST
 CLASS_LABELS = [
@@ -247,9 +259,9 @@ def main():
                                    format="%.4f",
                                    help="Step size at each iteration while moving toward minimizing the loss")
             
-            data_split = st.slider("Train/Test Split", 70, 90, 80, 5,
+            data_split = st.slider("Train/Validation Split", 70, 90, 80, 5,
                                    format="%d%%",
-                                   help="Percentage of data to use for training vs testing")
+                                   help="Percentage of training data to use for training vs validation")
         
         with col3:
             dataset_choice = st.selectbox("Dataset to Visualize",
@@ -263,72 +275,106 @@ def main():
     # Training button
     train_button = st.button("🚀 Start Training")
     
-    # Placeholder for training visualization
-    training_placeholder = st.empty()
-    training_plot = None
+    # Placeholder for training output
+    training_output = st.empty()
     
-    # Training process
     if train_button:
-        with st.spinner("Preparing data and model..."):
+        with training_output.container():
+            st.info("🚀 Starting training... This may take a few minutes.")
+            
             # Load data
-            (x_train, y_train), (x_test, y_test) = load_data()
+            with st.spinner("Loading Fashion MNIST dataset..."):
+                (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(
+                    train_split=data_split/100.0,
+                    show_sample_images=show_sample_images,
+                    dataset_choice=dataset_choice
+                )
+            
+            # Create a placeholder for the plot
+            plot_placeholder = st.empty()
             
             # Create and compile model
-            model = get_model()
+            with st.spinner("Initializing model..."):
+                model = get_model()
+                optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+                model.compile(optimizer=optimizer,
+                            loss='sparse_categorical_crossentropy',
+                            metrics=['accuracy'])
             
             # Display model summary
-            with st.expander("View Model Architecture"):
-                model_summary = []
-                model.summary(print_fn=lambda x: model_summary.append(x))
-                st.text("\n".join(model_summary))
+            with st.expander("📊 Model Architecture", expanded=False):
+                buffer = StringIO()
+                model.summary(print_fn=lambda x: buffer.write(x + '\n'))
+                st.text(buffer.getvalue())
             
-            # Initialize training plot
-            with training_placeholder.container():
-                st.markdown("### Training Progress")
-                plot_placeholder = st.empty()
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+            # Train model with our custom callback
+            with st.spinner("Training in progress..."):
+                plot_callback = TrainingPlot(plot_placeholder, CLASS_LABELS)
                 
-                # Create training plot
-                plot_fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-                training_plot = TrainingPlot(plot_placeholder)
-                
-                # Train model
-                status_text.text("Starting training...")
-                
-                # Simulate training with progress
-                for epoch in range(epochs):
-                    # Update progress
-                    progress = (epoch + 1) / epochs
-                    progress_bar.progress(progress)
-                    status_text.text(f"Epoch {epoch + 1}/{epochs}")
-                    
-                    # Simulate training for this epoch
-                    history = model.fit(
-                        x_train, y_train,
-                        batch_size=batch_size,
-                        epochs=1,
-                        validation_data=(x_test, y_test),
-                        callbacks=[training_plot],
-                        verbose=0
-                    )
-                    
-                    # Add a small delay to see the progress
-                    time.sleep(0.5)
-                
-                # Final evaluation
-                test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
-                status_text.success(f"Training complete! Test accuracy: {test_acc:.4f}")
-                
-                # Save the trained model
-                model.save('trained_model.h5')
-                st.download_button(
-                    label="💾 Download Trained Model",
-                    data=open('trained_model.h5', 'rb'),
-                    file_name='fashion_mnist_model.h5',
-                    mime='application/octet-stream'
+                history = model.fit(
+                    x_train, y_train,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    validation_data=(x_val, y_val),
+                    callbacks=[plot_callback],
+                    verbose=0
                 )
+            
+            # Show final metrics on test set
+            st.success("✅ Training complete!")
+            with st.spinner("Evaluating on test set..."):
+                test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+            
+            # Display metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Test Loss", f"{test_loss:.4f}")
+            with col2:
+                st.metric("Test Accuracy", f"{test_acc*100:.2f}%")
+            
+            # Show some example predictions
+            st.subheader("Example Predictions on Test Set")
+            with st.spinner("Generating predictions..."):
+                show_predictions(model, x_test, y_test, CLASS_LABELS)
+            
+            # Download button for the trained model
+            st.download_button(
+                label="💾 Download Model",
+                data=model_to_bytes(model, 'fashion_mnist_model.h5'),
+                file_name="fashion_mnist_model.h5",
+                mime="application/octet-stream"
+            )
+
+def show_predictions(model, x_test, y_test, class_names, num_examples=5):
+    """Display model predictions on sample test images"""
+    # Select random test samples
+    indices = np.random.choice(len(x_test), num_examples, replace=False)
+    x_samples = x_test[indices]
+    y_true = y_test[indices]
     
+    # Get model predictions
+    y_pred = model.predict(x_samples)
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    
+    # Create figure
+    fig, axes = plt.subplots(1, num_examples, figsize=(15, 3))
+    if num_examples == 1:
+        axes = [axes]
+    
+    for i, (img, true_label, pred_label, ax) in enumerate(zip(x_samples, y_true, y_pred_classes, axes)):
+        img = img.squeeze()
+        ax.imshow(img, cmap='gray')
+        
+        # Set title with true and predicted labels
+        true_name = class_names[true_label]
+        pred_name = class_names[pred_label]
+        color = 'green' if true_label == pred_label else 'red'
+        ax.set_title(f"True: {true_name}\nPred: {pred_name}", color=color)
+        ax.axis('off')
+    
+    plt.tight_layout()
+    st.pyplot(fig)
+
     # Training information
     with st.expander("ℹ️ About the Training Process"):
         st.markdown("""
