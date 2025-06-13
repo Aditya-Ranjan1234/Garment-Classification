@@ -14,10 +14,11 @@ from io import StringIO, BytesIO
 import tempfile
 
 # Import training utilities
-from train_utils import TrainingPlot, get_model, load_data, TrainingCallback
+from train_utils import TrainingPlot, get_model, load_data
 import os
 import numpy as np
 from tensorflow.keras.datasets import fashion_mnist
+from tensorflow.keras.callbacks import Callback  # Add this import
 
 # Cache directory for dataset
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '.cache')
@@ -457,12 +458,47 @@ def main():
     st.header("🔍 Upload an Image for Classification")
     st.markdown("Upload an image of a fashion item to classify it using the pre-trained model.")
     
-    # Add file uploader with size limit
-    uploaded_file = st.file_uploader("Choose an image... (Max 5MB)", 
-                                   type=["jpg", "jpeg", "png"],
-                                   accept_multiple_files=False,
-                                   key="image_uploader")
-
+    # File uploader
+    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader")
+    
+    if uploaded_file is not None:
+        # Display the uploaded image
+        image = Image.open(uploaded_file)
+        st.image(image, caption='Uploaded Image', use_column_width=True, width=200)
+        
+        # Add classify button
+        if st.button("🔍 Classify Image", key="classify_button"):
+            try:
+                # Check file size (5MB limit)
+                if uploaded_file.size > 5 * 1024 * 1024:  # 5MB in bytes
+                    st.error("File size too large. Please upload an image smaller than 5MB.")
+                else:
+                    # Load the pre-trained model
+                    with st.spinner("Loading model..."):
+                        model = load_custom_model()
+                    
+                    if model is not None:
+                        # Preprocess and predict
+                        with st.spinner("Classifying image..."):
+                            img_array = preprocess_image(image)
+                            if img_array is not None:
+                                predicted_class, confidence, predictions = predict_garment(model, img_array)
+                                
+                                # Display prediction
+                                st.subheader("Prediction Results")
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.metric("Predicted Class", CLASS_LABELS[predicted_class])
+                                    st.metric("Confidence", f"{confidence*100:.2f}%")
+                                
+                                with col2:
+                                    st.markdown("### Class Probabilities")
+                                    for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
+                                        st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
+            except Exception as e:
+                st.error(f"Error processing image: {str(e)}")
+    
 def show_predictions(model, x_test, y_test, class_names, num_examples=5):
     """Display model predictions on sample test images"""
     # Select random test samples
@@ -528,32 +564,36 @@ def show_predictions(model, x_test, y_test, class_names, num_examples=5):
                 # Check file size (5MB limit)
                 if uploaded_file.size > 5 * 1024 * 1024:  # 5MB in bytes
                     st.error("File size too large. Please upload an image smaller than 5MB.")
-                else:
-                    # Load the pre-trained model
-                    with st.spinner("Loading model..."):
-                        model = load_custom_model()
-                    
-                    if model is not None:
-                        # Preprocess and predict
-                        with st.spinner("Classifying image..."):
-                            img_array = preprocess_image(image)
-                            if img_array is not None:
-                                predicted_class, confidence, predictions = predict_garment(model, img_array)
-                                
-                                # Display prediction
-                                st.subheader("Prediction Results")
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.metric("Predicted Class", CLASS_LABELS[predicted_class])
-                                    st.metric("Confidence", f"{confidence*100:.2f}%")
-                                
-                                with col2:
-                                    st.markdown("### Class Probabilities")
-                                    for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
-                                        st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
-        except Exception as e:
-            st.error(f"Error processing image: {str(e)}")
+                    return
+                
+                # Load the pre-trained model
+                with st.spinner("Loading model..."):
+                    model = load_custom_model()
+                
+                if model is None:
+                    st.error("Failed to load the model. Please try again.")
+                    return
+                
+                # Preprocess and predict
+                with st.spinner("Classifying image..."):
+                    img_array = preprocess_image(image)
+                    if img_array is not None:
+                        predicted_class, confidence, predictions = predict_garment(model, img_array)
+                        
+                        # Display prediction
+                        st.subheader("Prediction Results")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("Predicted Class", CLASS_LABELS[predicted_class])
+                            st.metric("Confidence", f"{confidence*100:.2f}%")
+                        
+                        with col2:
+                            st.markdown("### Class Probabilities")
+                            for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
+                                st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
+            except Exception as e:
+                st.error(f"Error processing image: {str(e)}")
     
     # Sidebar information
     st.sidebar.markdown("## Class Labels")
