@@ -10,7 +10,12 @@ import matplotlib.pyplot as plt
 import warnings
 import io
 import base64
+import time
+from train_utils import TrainingPlot, get_model, load_data
 warnings.filterwarnings('ignore')
+
+# Set matplotlib style
+plt.style.use('seaborn')
 
 # Set page config with a wider layout
 st.set_page_config(
@@ -18,13 +23,6 @@ st.set_page_config(
     page_icon="👕",
     layout="wide",
     initial_sidebar_state="expanded"
-)
-
-# Set page config
-st.set_page_config(
-    page_title="GarmentCV - Fashion Analysis",
-    page_icon="👕",
-    layout="wide"
 )
 
 # Class labels for Fashion MNIST
@@ -119,36 +117,65 @@ def predict_garment(model, img_array):
 
 def create_model_architecture_image():
     """Create a visualization of the model architecture"""
-    # Create a simple visualization of the model architecture
-    img = Image.new('RGB', (800, 600), color='white')
-    draw = ImageDraw.Draw(img)
+    # Create a figure with better dimensions
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.axis('off')
     
-    # Draw the model architecture
+    # Model architecture description with layer details
     layers = [
-        ("Input\n28x28x1", 100, 100, '#FFD700'),
-        ("Conv2D (32)\n3x3, ReLU", 300, 100, '#FFA07A'),
-        ("BatchNorm", 500, 100, '#98FB98'),
-        ("MaxPool\n2x2", 700, 100, '#87CEFA'),
-        ("Conv2D (64)\n3x3, ReLU", 300, 300, '#FFA07A'),
-        ("BatchNorm", 500, 300, '#98FB98'),
-        ("MaxPool\n2x2", 700, 300, '#87CEFA'),
-        ("Flatten", 500, 500, '#DDA0DD'),
-        ("Dense (256)\nReLU", 300, 500, '#FFB6C1'),
-        ("Dropout\n0.5", 100, 500, '#F0E68C'),
-        ("Output (10)\nSoftmax", 300, 700, '#FF6347')
+        ("Input\n28×28×1", 0.1, 0.8),
+        ("Conv2D (32)\n3×3, ReLU", 0.3, 0.8),
+        ("BatchNorm", 0.3, 0.7),
+        ("Conv2D (32)\n3×3, ReLU", 0.5, 0.7),
+        ("BatchNorm", 0.5, 0.6),
+        ("MaxPool2D 2×2", 0.7, 0.65),
+        ("Dropout 0.25", 0.7, 0.75),
+        ("Conv2D (64)\n3×3, ReLU", 0.3, 0.5),
+        ("BatchNorm", 0.3, 0.4),
+        ("Conv2D (64)\n3×3, ReLU", 0.5, 0.4),
+        ("BatchNorm", 0.5, 0.3),
+        ("MaxPool2D 2×2", 0.7, 0.35),
+        ("Dropout 0.25", 0.7, 0.45),
+        ("Conv2D (128)\n3×3, ReLU", 0.5, 0.2),
+        ("BatchNorm", 0.5, 0.1),
+        ("MaxPool2D 2×2", 0.7, 0.15),
+        ("Dropout 0.25", 0.7, 0.25),
+        ("Flatten", 0.3, 0.0),
+        ("Dense (256)\nReLU", 0.5, 0.0),
+        ("BatchNorm", 0.5, -0.1),
+        ("Dropout 0.5", 0.5, -0.2),
+        ("Dense (10)\nSoftmax", 0.7, -0.1)
     ]
     
     # Draw connections
-    for i in range(len(layers)-1):
-        x1, y1 = layers[i][1] + 100, layers[i][2] + 30
-        x2, y2 = layers[i+1][1] + 100, layers[i+1][2]
-        draw.line([x1, y1, x2, y2], fill='gray', width=2)
+    connections = [
+        (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7),
+        (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13),
+        (13, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 19),
+        (19, 20), (20, 21)
+    ]
     
-    # Draw layers
-    for name, x, y, color in layers:
-        draw.rectangle([x, y, x+200, y+60], fill=color, outline='black', width=2)
-        draw.text((x+10, y+20), name, fill='black')
+    # Draw connections first (behind the nodes)
+    for i, j in connections:
+        ax.plot([layers[i][1], layers[j][1]], [layers[i][2], layers[j][2]], 
+                'k-', alpha=0.3, linewidth=2)
     
+    # Draw nodes on top
+    for i, (name, x, y) in enumerate(layers):
+        color = plt.cm.tab20(i / len(layers))
+        circle = plt.Circle((x, y), 0.02, color=color, zorder=10)
+        ax.add_artist(circle)
+        ax.text(x, y + 0.03, name, ha='center', va='bottom', fontsize=8,
+               bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2'))
+    
+    plt.tight_layout()
+    
+    # Convert to image
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    img = Image.open(buf)
     return img
 
 def main():
@@ -178,24 +205,107 @@ def main():
     # Show model architecture visualization
     st.image(create_model_architecture_image(), caption="Model Architecture Visualization", use_column_width=True)
     
-    # Training Process
-    st.subheader("Training Process")
+    # Training Demo Section
+    st.subheader("Interactive Training Demo")
     st.markdown("""
-    The model was trained using:
-    - **Dataset**: Fashion MNIST (60,000 training images, 10,000 test images)
-    - **Optimizer**: Adam
-    - **Loss Function**: Sparse Categorical Crossentropy
-    - **Batch Size**: 64
-    - **Epochs**: 50
-    - **Data Augmentation**: Random rotations and translations
+    Click the button below to start an interactive training session. 
+    Watch how the model learns from the Fashion MNIST dataset in real-time!
     """)
     
-    # Add a sample training metrics visualization (placeholder)
-    st.markdown("### Training Metrics")
-    st.line_chart({
-        'Accuracy': [0.75, 0.85, 0.89, 0.91, 0.92, 0.93, 0.94, 0.95],
-        'Loss': [0.8, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2, 0.18]
-    })
+    # Training parameters
+    col1, col2 = st.columns(2)
+    with col1:
+        epochs = st.slider("Number of Epochs", 1, 20, 10, 1,
+                         help="Number of times to iterate over the entire dataset")
+        batch_size = st.select_slider("Batch Size", options=[32, 64, 128, 256], value=64,
+                                   help="Number of samples per gradient update")
+    
+    # Training button
+    train_button = st.button("🚀 Start Training")
+    
+    # Placeholder for training visualization
+    training_placeholder = st.empty()
+    training_plot = None
+    
+    # Training process
+    if train_button:
+        with st.spinner("Preparing data and model..."):
+            # Load data
+            (x_train, y_train), (x_test, y_test) = load_data()
+            
+            # Create and compile model
+            model = get_model()
+            
+            # Display model summary
+            with st.expander("View Model Architecture"):
+                model_summary = []
+                model.summary(print_fn=lambda x: model_summary.append(x))
+                st.text("\n".join(model_summary))
+            
+            # Initialize training plot
+            with training_placeholder.container():
+                st.markdown("### Training Progress")
+                plot_placeholder = st.empty()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Create training plot
+                plot_fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+                training_plot = TrainingPlot(plot_placeholder)
+                
+                # Train model
+                status_text.text("Starting training...")
+                
+                # Simulate training with progress
+                for epoch in range(epochs):
+                    # Update progress
+                    progress = (epoch + 1) / epochs
+                    progress_bar.progress(progress)
+                    status_text.text(f"Epoch {epoch + 1}/{epochs}")
+                    
+                    # Simulate training for this epoch
+                    history = model.fit(
+                        x_train, y_train,
+                        batch_size=batch_size,
+                        epochs=1,
+                        validation_data=(x_test, y_test),
+                        callbacks=[training_plot],
+                        verbose=0
+                    )
+                    
+                    # Add a small delay to see the progress
+                    time.sleep(0.5)
+                
+                # Final evaluation
+                test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+                status_text.success(f"Training complete! Test accuracy: {test_acc:.4f}")
+                
+                # Save the trained model
+                model.save('trained_model.h5')
+                st.download_button(
+                    label="💾 Download Trained Model",
+                    data=open('trained_model.h5', 'rb'),
+                    file_name='fashion_mnist_model.h5',
+                    mime='application/octet-stream'
+                )
+    
+    # Training information
+    with st.expander("ℹ️ About the Training Process"):
+        st.markdown("""
+        The model is trained using the following configuration:
+        - **Dataset**: Fashion MNIST (60,000 training, 10,000 test images)
+        - **Optimizer**: Adam (learning_rate=0.001)
+        - **Loss Function**: Sparse Categorical Crossentropy
+        - **Metrics**: Accuracy
+        - **Batch Size**: Configurable (32-256)
+        - **Epochs**: Configurable (1-20)
+        
+        During training, you can observe:
+        - Training and validation loss (left plot)
+        - Training and validation accuracy (right plot)
+        
+        The model uses data augmentation (random rotations and translations) to improve generalization.
+        """)
     
     st.markdown("---")
     st.header("Try It Out!")
