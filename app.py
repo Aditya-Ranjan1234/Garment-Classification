@@ -272,78 +272,172 @@ def main():
             show_sample_images = st.checkbox("Show Sample Images", True,
                                           help="Display sample images from the selected dataset")
     
-    # Training button
-    train_button = st.button("🚀 Start Training")
+    # Create tabs for different functionalities
+    tab1, tab2 = st.tabs(["🔍 Image Classification", "🎓 Train Your Own Model"])
     
-    # Placeholder for training output
-    training_output = st.empty()
+    with tab1:
+        st.header("🔍 Upload an Image for Classification")
+        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+        
+        if uploaded_file is not None:
+            # Display the uploaded image
+            image = Image.open(uploaded_file)
+            st.image(image, caption='Uploaded Image', use_column_width=True)
+            
+            # Load the pre-trained model
+            with st.spinner("Loading model..."):
+                model = load_custom_model()
+            
+            if model is not None:
+                # Preprocess and predict
+                with st.spinner("Classifying image..."):
+                    img_array = preprocess_image(image)
+                    if img_array is not None:
+                        predicted_class, confidence, predictions = predict_garment(model, img_array)
+                        
+                        # Display prediction
+                        st.subheader("Prediction Results")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("Predicted Class", CLASS_LABELS[predicted_class])
+                            st.metric("Confidence", f"{confidence*100:.2f}%")
+                        
+                        with col2:
+                            st.markdown("### Class Probabilities")
+                            for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
+                                st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
     
-    if train_button:
-        with training_output.container():
-            st.info("🚀 Starting training... This may take a few minutes.")
-            
-            # Load data
-            with st.spinner("Loading Fashion MNIST dataset..."):
-                (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(
-                    train_split=data_split/100.0,
-                    show_sample_images=show_sample_images,
-                    dataset_choice=dataset_choice
-                )
-            
-            # Create a placeholder for the plot
-            plot_placeholder = st.empty()
-            
-            # Create and compile model
-            with st.spinner("Initializing model..."):
-                model = get_model()
-                optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-                model.compile(optimizer=optimizer,
-                            loss='sparse_categorical_crossentropy',
-                            metrics=['accuracy'])
-            
-            # Display model summary
-            with st.expander("📊 Model Architecture", expanded=False):
-                buffer = StringIO()
-                model.summary(print_fn=lambda x: buffer.write(x + '\n'))
-                st.text(buffer.getvalue())
-            
-            # Train model with our custom callback
-            with st.spinner("Training in progress..."):
-                plot_callback = TrainingPlot(plot_placeholder, CLASS_LABELS)
-                
-                history = model.fit(
-                    x_train, y_train,
-                    batch_size=batch_size,
-                    epochs=epochs,
-                    validation_data=(x_val, y_val),
-                    callbacks=[plot_callback],
-                    verbose=0
-                )
-            
-            # Show final metrics on test set
-            st.success("✅ Training complete!")
-            with st.spinner("Evaluating on test set..."):
-                test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
-            
-            # Display metrics
-            col1, col2 = st.columns(2)
+    with tab2:
+        st.header("🎓 Train Your Own Model")
+        st.markdown("""
+        Use this interactive demo to train a CNN model on the Fashion MNIST dataset.
+        Adjust the parameters below and click 'Start Training' to begin.
+        """)
+        
+        # Training parameters
+        with st.expander("⚙️ Training Settings", expanded=True):
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Test Loss", f"{test_loss:.4f}")
+                epochs = st.slider("Number of Epochs", 1, 20, 5, 1,
+                                 help="Number of complete passes through the training dataset")
+                batch_size = st.select_slider("Batch Size", 
+                                           options=[32, 64, 128, 256], 
+                                           value=64,
+                                           help="Number of samples per gradient update")
+            
             with col2:
-                st.metric("Test Accuracy", f"{test_acc*100:.2f}%")
+                learning_rate = st.slider("Learning Rate", 0.0001, 0.01, 0.001, 0.0001,
+                                       format="%.4f",
+                                       help="Step size at each iteration while moving toward minimizing the loss")
+                
+                data_split = st.slider("Train/Validation Split", 70, 90, 80, 5,
+                                       format="%d%%",
+                                       help="Percentage of training data to use for training vs validation")
             
-            # Show some example predictions
-            st.subheader("Example Predictions on Test Set")
-            with st.spinner("Generating predictions..."):
-                show_predictions(model, x_test, y_test, CLASS_LABELS)
-            
-            # Download button for the trained model
-            st.download_button(
-                label="💾 Download Model",
-                data=model_to_bytes(model, 'fashion_mnist_model.h5'),
-                file_name="fashion_mnist_model.h5",
-                mime="application/octet-stream"
-            )
+            with col3:
+                dataset_choice = st.selectbox("Dataset to Visualize",
+                                           ["Training Samples", "Test Samples", "Both"],
+                                           index=2,
+                                           help="Which dataset to show samples from")
+                
+                show_sample_images = st.checkbox("Show Sample Images", True,
+                                              help="Display sample images from the selected dataset")
+        
+        # Training controls
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            train_button = st.button("🚀 Start Training", key="train_button")
+        with col2:
+            stop_button = st.button("⏹️ Stop Training", key="stop_button", disabled=not train_button)
+        
+        if stop_button:
+            stop_training = True
+            st.warning("Training will stop after the current epoch completes.")
+        
+        # Placeholder for training output
+        training_output = st.empty()
+        
+        if train_button:
+            stop_training = False
+            with training_output.container():
+                st.info("🚀 Starting training... This may take a few minutes.")
+                
+                # Initialize progress bar and status
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                plot_placeholder = st.empty()
+                
+                # Initialize callback
+                training_callback = TrainingCallback(progress_bar, status_text, plot_placeholder)
+                
+                # Load data
+                with st.spinner("Loading Fashion MNIST dataset..."):
+                    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(
+                        train_split=data_split/100.0,
+                        show_sample_images=show_sample_images,
+                        dataset_choice=dataset_choice
+                    )
+                
+                # Create and compile model
+                with st.spinner("Initializing model..."):
+                    model = get_model()
+                    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+                    model.compile(optimizer=optimizer,
+                                loss='sparse_categorical_crossentropy',
+                                metrics=['accuracy'])
+                
+                # Display model summary
+                with st.expander("📊 Model Architecture", expanded=False):
+                    buffer = StringIO()
+                    model.summary(print_fn=lambda x: buffer.write(x + '\n'))
+                    st.text(buffer.getvalue())
+                
+                # Train model with our custom callback
+                try:
+                    with st.spinner("Training in progress..."):
+                        history = model.fit(
+                            x_train, y_train,
+                            batch_size=batch_size,
+                            epochs=epochs,
+                            validation_data=(x_val, y_val),
+                            callbacks=[training_callback],
+                            verbose=0
+                        )
+                    
+                    # Show final metrics on test set if training completed
+                    if not stop_training:
+                        st.success("✅ Training complete!")
+                        with st.spinner("Evaluating on test set..."):
+                            test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+                        
+                        # Display metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Test Loss", f"{test_loss:.4f}")
+                        with col2:
+                            st.metric("Test Accuracy", f"{test_acc*100:.2f}%")
+                        
+                        # Show some example predictions
+                        st.subheader("Example Predictions on Test Set")
+                        with st.spinner("Generating predictions..."):
+                            show_predictions(model, x_test, y_test, CLASS_LABELS)
+                        
+                        # Download button for the trained model
+                        st.download_button(
+                            label="💾 Download Model",
+                            data=model_to_bytes(model, 'fashion_mnist_model.h5'),
+                            file_name="fashion_mnist_model.h5",
+                            mime="application/octet-stream"
+                        )
+                    else:
+                        st.warning("⚠️ Training was stopped early.")
+                        
+                except Exception as e:
+                    st.error(f"An error occurred during training: {str(e)}")
+                finally:
+                    # Reset the stop flag
+                    stop_training = False
 
 def show_predictions(model, x_test, y_test, class_names, num_examples=5):
     """Display model predictions on sample test images"""
@@ -466,18 +560,6 @@ def show_predictions(model, x_test, y_test, class_names, num_examples=5):
                 else:
                     st.warning(f"Low confidence prediction: {CLASS_LABELS[predicted_class]} ({confidence:.2f})")
                     st.info("Try uploading a clearer image or adjusting the confidence threshold.")
-    
-    # Add some information about the app in the sidebar
-    st.sidebar.markdown("## About")
-    st.sidebar.markdown("""
-    This Fashion Item Classifier is powered by a custom CNN model trained on the Fashion MNIST dataset. 
-    It can identify 10 different types of clothing items with high accuracy.
-    """)
-    
-    st.sidebar.markdown("## Class Labels")
-    st.sidebar.markdown("The model can identify the following items:")
-    st.sidebar.markdown("""
-    - 👕 T-shirt/top
     - 👖 Trouser
     - 🧥 Pullover
     - 👗 Dress
