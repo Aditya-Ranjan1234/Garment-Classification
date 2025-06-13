@@ -14,7 +14,14 @@ from io import StringIO, BytesIO
 import tempfile
 
 # Import training utilities
-from train_utils import TrainingPlot, get_model, load_data
+from train_utils import TrainingPlot, get_model, load_data, TrainingCallback
+import os
+import numpy as np
+from tensorflow.keras.datasets import fashion_mnist
+
+# Cache directory for dataset
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '.cache')
+os.makedirs(CACHE_DIR, exist_ok=True)
 warnings.filterwarnings('ignore')
 
 def model_to_bytes(model, filename):
@@ -69,52 +76,21 @@ MODEL_PATH = "fashion_custom_cnn.h5"  # Local model file
 def load_custom_model():
     """Load the custom trained model by rebuilding its architecture"""
     try:
-        # Rebuild the model architecture
-        model = Sequential([
-            InputLayer(input_shape=(28, 28, 1)),
-            
-            # Block 1
-            Conv2D(32, 3, padding='same', activation='relu'),
-            BatchNormalization(),
-            Conv2D(32, 3, padding='same', activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(),
-            Dropout(0.25),
-            
-            # Block 2
-            Conv2D(64, 3, padding='same', activation='relu'),
-            BatchNormalization(),
-            Conv2D(64, 3, padding='same', activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(),
-            Dropout(0.25),
-            
-            # Block 3
-            Conv2D(128, 3, padding='same', activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(),
-            Dropout(0.25),
-            
-            # Head
-            Flatten(),
-            Dense(256, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.5),
-            Dense(10, activation='softmax')
-        ])
+        # Create a new model with the same architecture
+        model = get_model()
         
-        # Load the weights
-        model.load_weights(MODEL_PATH)
+        # Define the path to the weights file
+        weights_path = os.path.join(os.path.dirname(__file__), 'fashion_mnist_model.h5')
         
-        # Compile the model
-        model.compile(optimizer='adam',
-                     loss='sparse_categorical_crossentropy',
-                     metrics=['accuracy'])
-        return model
+        # Try to load the pre-trained weights
+        if os.path.exists(weights_path):
+            model.load_weights(weights_path)
+            return model
+        else:
+            st.warning("Pre-trained weights not found. Using untrained model.")
+            return model
     except Exception as e:
-        st.error(f"Error loading model: {e}")
-        import traceback
-        st.error(traceback.format_exc())
+        st.warning(f"Could not load pre-trained model: {e}")
         return None
 
 def preprocess_image(img, target_size=(28, 28)):
@@ -210,6 +186,104 @@ def create_model_architecture_image():
     img = Image.open(buf)
     return img
 
+def show_samples(images, labels, num_samples=5, class_names=None):
+    """Display sample images with their labels"""
+    if num_samples > len(images):
+        num_samples = len(images)
+        
+    # Select random samples
+    indices = np.random.choice(len(images), num_samples, replace=False)
+    samples = images[indices]
+    sample_labels = labels[indices]
+    
+    # Create figure
+    fig, axes = plt.subplots(1, num_samples, figsize=(15, 3))
+    if num_samples == 1:
+        axes = [axes]
+    
+    for i, (img, label_idx) in enumerate(zip(samples, sample_labels)):
+        ax = axes[i]
+        ax.imshow(img.squeeze(), cmap='gray')
+        if class_names is not None:
+            ax.set_title(f"{class_names[label_idx]} ({label_idx})")
+        else:
+            ax.set_title(f"Class {label_idx}")
+        ax.axis('off')
+    
+    plt.tight_layout()
+    st.pyplot(fig)
+
+def load_data(train_split=0.8, show_sample_images=True, dataset_choice="Both"):
+    """
+    Load and preprocess Fashion MNIST data with caching
+    
+    Args:
+        train_split: Percentage of data to use for training (0-1)
+        show_sample_images: Whether to display sample images
+        dataset_choice: Which dataset to show samples from ("Training", "Test", "Both")
+        
+    Returns:
+        Tuple of (x_train, y_train), (x_val, y_val), (x_test, y_test)
+    """
+    # Define cache paths
+    cache_dir = os.path.join(CACHE_DIR, 'fashion_mnist')
+    os.makedirs(cache_dir, exist_ok=True)
+    
+    train_cache = os.path.join(cache_dir, 'train.npz')
+    test_cache = os.path.join(cache_dir, 'test.npz')
+    
+    # Try to load from cache first
+    if os.path.exists(train_cache) and os.path.exists(test_cache):
+        try:
+            train_data = np.load(train_cache, allow_pickle=True)
+            x_train_full, y_train_full = train_data['x'], train_data['y']
+            
+            test_data = np.load(test_cache, allow_pickle=True)
+            x_test, y_test = test_data['x'], test_data['y']
+            
+            st.sidebar.success("✅ Loaded dataset from cache")
+        except Exception as e:
+            st.sidebar.warning(f"Error loading cached data: {e}. Downloading fresh data...")
+            (x_train_full, y_train_full), (x_test, y_test) = fashion_mnist.load_data()
+            
+            # Save to cache
+            np.savez(train_cache, x=x_train_full, y=y_train_full)
+            np.savez(test_cache, x=x_test, y=y_test)
+    else:
+        # Download fresh data
+        (x_train_full, y_train_full), (x_test, y_test) = fashion_mnist.load_data()
+        
+        # Save to cache
+        np.savez(train_cache, x=x_train_full, y=y_train_full)
+        np.savez(test_cache, x=x_test, y=y_test)
+    
+    # Split training data into training and validation sets
+    num_train = int(len(x_train_full) * train_split)
+    x_train, x_val = x_train_full[:num_train], x_train_full[num_train:]
+    y_train, y_val = y_train_full[:num_train], y_train_full[num_train:]
+    
+    # Normalize pixel values to [0, 1]
+    x_train = x_train.astype('float32') / 255.0
+    x_val = x_val.astype('float32') / 255.0
+    x_test = x_test.astype('float32') / 255.0
+    
+    # Add channel dimension
+    x_train = np.expand_dims(x_train, -1)
+    x_val = np.expand_dims(x_val, -1)
+    x_test = np.expand_dims(x_test, -1)
+    
+    # Show sample images if requested
+    if show_sample_images and 'st' in globals():
+        st.subheader("Sample Images")
+        if dataset_choice in ["Training Samples", "Both"]:
+            st.write("### Training Samples")
+            show_samples(x_train, y_train, num_samples=5, class_names=CLASS_LABELS)
+        if dataset_choice in ["Test Samples", "Both"]:
+            st.write("### Test Samples")
+            show_samples(x_test, y_test, num_samples=5, class_names=CLASS_LABELS)
+    
+    return (x_train, y_train), (x_val, y_val), (x_test, y_test)
+
 def main():
     # Header
     st.title("👕 Fashion Item Classifier")
@@ -280,11 +354,13 @@ def main():
                                           key="show_samples_check")
     
     # Training controls
-    col1, col2 = st.columns([1, 3])
+    col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
         train_button = st.button("🚀 Start Training", key="train_button")
     with col2:
         stop_button = st.button("⏹️ Stop Training", key="stop_button", disabled=not train_button)
+    with col3:
+        show_samples_option = st.checkbox("Show Sample Images", value=True, key="show_samples_option")
     
     if stop_button:
         stop_training = True
@@ -303,14 +379,14 @@ def main():
             status_text = st.empty()
             plot_placeholder = st.empty()
             
-            # Initialize callback
-            training_callback = TrainingCallback(progress_bar, status_text, plot_placeholder)
+            # Initialize callback with class names
+            training_callback = TrainingPlot(plot_placeholder, CLASS_LABELS)
             
             # Load data
             with st.spinner("Loading Fashion MNIST dataset..."):
                 (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(
                     train_split=data_split/100.0,
-                    show_sample_images=show_sample_images,
+                    show_sample_images=show_samples_option,
                     dataset_choice=dataset_choice
                 )
             
@@ -434,74 +510,48 @@ def show_predictions(model, x_test, y_test, class_names, num_examples=5):
         
         The model uses data augmentation (random rotations and translations) to improve generalization.
         """)
-            
-            # Display results
-            with col2:
-                st.subheader("Analysis Results")
-                
-                if confidence >= confidence_threshold:
-                    st.success(f"Predicted: {CLASS_LABELS[predicted_class]} (Confidence: {confidence:.2f})")
-                    
-                    # Display confidence scores
-                    st.subheader("Confidence Scores")
-                    fig, ax = plt.subplots()
-                    y_pos = np.arange(len(CLASS_LABELS))
-                    ax.barh(y_pos, all_predictions, align='center')
-                    ax.set_yticks(y_pos)
-                    ax.set_yticklabels(CLASS_LABELS)
-                    ax.invert_yaxis()
-                    ax.set_xlabel('Confidence')
-                    st.pyplot(fig)
-                    
-                    # Display style recommendations
-                    st.subheader("Style Recommendations")
-                    if CLASS_LABELS[predicted_class] in ["T-shirt/top", "Shirt"]:
-                        st.write("👖 Pairs well with: Jeans, Chinos")
-                        st.write("👔 Try layering with a blazer or cardigan")
-                    elif CLASS_LABELS[predicted_class] == "Dress":
-                        st.write("👠 Pairs well with: Heels, Sandals")
-                        st.write("🧥 Great with a denim or leather jacket")
-                    elif CLASS_LABELS[predicted_class] == "Sneaker":
-                        st.write("👖 Pairs well with: Casual pants, Jeans, Shorts")
-                        st.write("🧦 Try with no-show socks for a clean look")
-                else:
-                    st.warning(f"Low confidence prediction: {CLASS_LABELS[predicted_class]} ({confidence:.2f})")
-                    st.info("Try uploading a clearer image or adjusting the confidence threshold.")
     
     # Process uploaded image if any
-    if 'uploaded_file' in locals() and uploaded_file is not None:
-        try:
-            # Check file size (5MB limit)
-            if uploaded_file.size > 5 * 1024 * 1024:  # 5MB in bytes
-                st.error("File size too large. Please upload an image smaller than 5MB.")
-            else:
-                # Display the uploaded image
-                image = Image.open(uploaded_file)
-                st.image(image, caption='Uploaded Image', use_column_width=True, width=200)
-                
-                # Load the pre-trained model
-                with st.spinner("Loading model..."):
-                    model = load_custom_model()
-                
-                if model is not None:
-                    # Preprocess and predict
-                    with st.spinner("Classifying image..."):
-                        img_array = preprocess_image(image)
-                        if img_array is not None:
-                            predicted_class, confidence, predictions = predict_garment(model, img_array)
-                            
-                            # Display prediction
-                            st.subheader("Prediction Results")
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.metric("Predicted Class", CLASS_LABELS[predicted_class])
-                                st.metric("Confidence", f"{confidence*100:.2f}%")
-                            
-                            with col2:
-                                st.markdown("### Class Probabilities")
-                                for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
-                                    st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
+    uploaded_file = st.file_uploader("Choose an image... (Max 5MB)", 
+                                   type=["jpg", "jpeg", "png"],
+                                   accept_multiple_files=False,
+                                   key="image_uploader")
+    
+    if uploaded_file is not None:
+        # Display the uploaded image
+        image = Image.open(uploaded_file)
+        st.image(image, caption='Uploaded Image', use_column_width=True, width=200)
+        
+        # Add classify button
+        if st.button("🔍 Classify Image", key="classify_button"):
+            try:
+                # Check file size (5MB limit)
+                if uploaded_file.size > 5 * 1024 * 1024:  # 5MB in bytes
+                    st.error("File size too large. Please upload an image smaller than 5MB.")
+                else:
+                    # Load the pre-trained model
+                    with st.spinner("Loading model..."):
+                        model = load_custom_model()
+                    
+                    if model is not None:
+                        # Preprocess and predict
+                        with st.spinner("Classifying image..."):
+                            img_array = preprocess_image(image)
+                            if img_array is not None:
+                                predicted_class, confidence, predictions = predict_garment(model, img_array)
+                                
+                                # Display prediction
+                                st.subheader("Prediction Results")
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.metric("Predicted Class", CLASS_LABELS[predicted_class])
+                                    st.metric("Confidence", f"{confidence*100:.2f}%")
+                                
+                                with col2:
+                                    st.markdown("### Class Probabilities")
+                                    for i, (label, prob) in enumerate(zip(CLASS_LABELS, predictions)):
+                                        st.progress(float(prob), text=f"{label}: {prob*100:.1f}%")
         except Exception as e:
             st.error(f"Error processing image: {str(e)}")
     

@@ -3,8 +3,9 @@ opencv-python-headless
 tensorflow
 numpy
 Pillow
-matplotlib
+matplotlib      
 requests
 h5py
 seaborn
 scikit-learn
+tqdm
