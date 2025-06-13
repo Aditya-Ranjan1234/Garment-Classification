@@ -72,26 +72,29 @@ CLASS_LABELS = [
 ]
 
 # Model path
-MODEL_PATH = "fashion_custom_cnn.h5"  # Local model file
+MODEL_PATH = os.path.join("D:", "My Projects", "somesh", "garmentcv-app", "fashion_custom_cnn.h5")
 
 def load_custom_model():
-    """Load the custom trained model by rebuilding its architecture"""
+    """Load the custom trained model from the specified path"""
     try:
-        # Create a new model with the same architecture
-        model = get_model()
+        # Check if model file exists
+        if not os.path.exists(MODEL_PATH):
+            st.error(f"Model file not found at: {MODEL_PATH}")
+            return None
+            
+        # Load the model
+        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
         
-        # Define the path to the weights file
-        weights_path = os.path.join(os.path.dirname(__file__), 'fashion_mnist_model.h5')
+        # Compile the model
+        model.compile(optimizer='adam',
+                    loss='sparse_categorical_crossentropy',
+                    metrics=['accuracy'])
         
-        # Try to load the pre-trained weights
-        if os.path.exists(weights_path):
-            model.load_weights(weights_path)
-            return model
-        else:
-            st.warning("Pre-trained weights not found. Using untrained model.")
-            return model
+        st.success("Successfully loaded pre-trained model!")
+        return model
+        
     except Exception as e:
-        st.warning(f"Could not load pre-trained model: {e}")
+        st.error(f"Error loading model from {MODEL_PATH}: {str(e)}")
         return None
 
 def preprocess_image(img, target_size=(28, 28)):
