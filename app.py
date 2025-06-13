@@ -14,16 +14,36 @@ import time
 from train_utils import TrainingPlot, get_model, load_data
 warnings.filterwarnings('ignore')
 
-# Set matplotlib style
-plt.style.use('seaborn')
+# Class labels for Fashion MNIST
+CLASS_LABELS = [
+    "T-shirt/top", "Trouser", "Pullover", "Dress", "Coat",
+    "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"
+]
 
-# Set page config with a wider layout
+# Class descriptions for educational purposes
+CLASS_DESCRIPTIONS = {
+    "T-shirt/top": "A T-shirt or top, typically short-sleeved and casual",
+    "Trouser": "Pants or trousers, including jeans, chinos, etc.",
+    "Pullover": "A sweater or pullover, typically long-sleeved",
+    "Dress": "A one-piece garment for women or girls",
+    "Coat": "Outerwear like jackets or coats",
+    "Sandal": "Open shoes with straps, typically worn in warm weather",
+    "Shirt": "A button-up shirt, typically with a collar",
+    "Sneaker": "Athletic shoes or trainers",
+    "Bag": "Handbags, backpacks, or similar accessories",
+    "Ankle boot": "Boots that cover the foot and ankle"
+}
+
+# Set page config with a wider layout - must be the first Streamlit command
 st.set_page_config(
     page_title="Fashion Classifier",
     page_icon="👕",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Set matplotlib style
+plt.style.use('seaborn')
 
 # Class labels for Fashion MNIST
 CLASS_LABELS = [
@@ -208,17 +228,37 @@ def main():
     # Training Demo Section
     st.subheader("Interactive Training Demo")
     st.markdown("""
-    Click the button below to start an interactive training session. 
-    Watch how the model learns from the Fashion MNIST dataset in real-time!
+    This interactive demo lets you explore how a neural network learns to classify fashion items. 
+    You can customize the training process and visualize the learning progress in real-time.
     """)
     
-    # Training parameters
-    col1, col2 = st.columns(2)
-    with col1:
-        epochs = st.slider("Number of Epochs", 1, 20, 10, 1,
-                         help="Number of times to iterate over the entire dataset")
-        batch_size = st.select_slider("Batch Size", options=[32, 64, 128, 256], value=64,
-                                   help="Number of samples per gradient update")
+    with st.expander("⚙️ Training Settings", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            epochs = st.slider("Number of Epochs", 1, 20, 5, 1,
+                             help="Number of complete passes through the training dataset")
+            batch_size = st.select_slider("Batch Size", 
+                                       options=[32, 64, 128, 256], 
+                                       value=64,
+                                       help="Number of samples per gradient update")
+        
+        with col2:
+            learning_rate = st.slider("Learning Rate", 0.0001, 0.01, 0.001, 0.0001,
+                                   format="%.4f",
+                                   help="Step size at each iteration while moving toward minimizing the loss")
+            
+            data_split = st.slider("Train/Test Split", 70, 90, 80, 5,
+                                   format="%d%%",
+                                   help="Percentage of data to use for training vs testing")
+        
+        with col3:
+            dataset_choice = st.selectbox("Dataset to Visualize",
+                                       ["Training Samples", "Test Samples", "Both"],
+                                       index=2,
+                                       help="Which dataset to show samples from")
+            
+            show_sample_images = st.checkbox("Show Sample Images", True,
+                                          help="Display sample images from the selected dataset")
     
     # Training button
     train_button = st.button("🚀 Start Training")
